@@ -1,0 +1,45 @@
+# Android Studio
+.idea/
+*.iml
+
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Local configuration
+local.properties
+
+# Android generated files
+.cxx/
+.externalNativeBuild/
+
+# Kotlin
+*.class
+
+# Logs
+*.log
+
+# Secrets
+.env
+.env.*
+*.jks
+*.keystore
+
+# Firebase / Google services
+google-services.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated / local data
+uploads/
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# User documents
+documents/
+storage/
