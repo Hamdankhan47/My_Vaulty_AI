@@ -47,7 +47,8 @@ class AiFieldExtractor(
 
         ExtractionResult(
             inferredDocumentType = body.documentType.ifEmpty { currentDocType },
-            fields = domainFields
+            fields = domainFields,
+            category = body.category
         )
     }
 

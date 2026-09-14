@@ -2,6 +2,7 @@ package com.myvault.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
@@ -17,11 +18,13 @@ import com.myvault.app.ui.home.HomeScreen
 import com.myvault.app.ui.home.HomeViewModel
 import com.myvault.app.ui.review.ReviewDocumentScreen
 import com.myvault.app.ui.theme.MyVaultTheme
+import com.myvault.app.ui.viewer.FileViewerScreen
 
 sealed class Screen {
     object Home : Screen()
     data class Detail(val document: Document) : Screen()
     data class Review(val document: Document) : Screen()
+    data class Viewer(val document: Document) : Screen()
 }
 
 class MainActivity : ComponentActivity() {
@@ -31,7 +34,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val database = AppDatabase.getInstance(applicationContext)
-        val repository = DocumentRepositoryImpl(database.documentDao(), database.documentFieldDao())
+        val repository = DocumentRepositoryImpl(database, database.documentDao(), database.documentFieldDao())
 
         setContent {
             MyVaultTheme {
@@ -41,12 +44,24 @@ class MainActivity : ComponentActivity() {
                 val homeViewModel: HomeViewModel = viewModel(factory = viewModelFactory)
                 var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
 
+                BackHandler(enabled = currentScreen != Screen.Home) {
+                    currentScreen = when (val screen = currentScreen) {
+                        is Screen.Viewer -> Screen.Detail(screen.document)
+                        is Screen.Review -> Screen.Detail(screen.document)
+                        is Screen.Detail -> Screen.Home
+                        is Screen.Home -> Screen.Home
+                    }
+                }
+
                 when (val screen = currentScreen) {
                     is Screen.Home -> {
                         HomeScreen(
                             viewModel = homeViewModel,
                             onDocumentClick = { document ->
                                 currentScreen = Screen.Detail(document)
+                            },
+                            onImportSuccess = { newDocument ->
+                                currentScreen = Screen.Detail(newDocument)
                             }
                         )
                     }
@@ -59,6 +74,9 @@ class MainActivity : ComponentActivity() {
                             },
                             onEditFieldsClick = { document ->
                                 currentScreen = Screen.Review(document)
+                            },
+                            onOpenFileClick = { document ->
+                                currentScreen = Screen.Viewer(document)
                             }
                         )
                     }
@@ -70,6 +88,15 @@ class MainActivity : ComponentActivity() {
                                 currentScreen = Screen.Detail(screen.document)
                             },
                             onSavedClick = {
+                                currentScreen = Screen.Detail(screen.document)
+                            }
+                        )
+                    }
+                    is Screen.Viewer -> {
+                        FileViewerScreen(
+                            initialDocument = screen.document,
+                            viewModel = homeViewModel,
+                            onBackClick = {
                                 currentScreen = Screen.Detail(screen.document)
                             }
                         )

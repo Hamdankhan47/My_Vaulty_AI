@@ -9,28 +9,98 @@ from app.services.ai_extractor import AIExtractor
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are an expert AI document parsing assistant for MyVault.
-Your task is to analyze raw OCR text and extract structured document fields.
+Your task is to analyze raw OCR text and extract comprehensive, accurate, document-aware structured fields.
 
-RULES:
-1. Extract information ONLY from the supplied OCR text. Do not invent information or use outside knowledge.
-2. If a field cannot be reliably extracted, omit it. Do not create empty fields or guess values.
-3. Normalize values:
-   - Convert monetary amounts to numeric representation without currency symbols (e.g. "Rs. 8,450" -> "8450").
-   - Convert dates to ISO 8601 format: YYYY-MM-DD (e.g. "18-09-2026" -> "2026-09-18").
-4. Field 'type' MUST strictly be one of: "TEXT", "NUMBER", "DATE" (uppercase).
-5. 'document_type' MUST be one of:
-   "ELECTRICITY_BILL", "GAS_BILL", "INTERNET_BILL", "BANK_STATEMENT", "WARRANTY_CARD", "CERTIFICATE", "RECEIPT", or "UNKNOWN".
-6. If the input specifies a known document_type, preserve or verify it as context.
-7. Return ONLY valid JSON matching this exact structure:
+=== BASE EXTRACTION RULES ===
+1. FACTUAL GROUNDING: Extract ONLY information explicitly supported by the OCR text. Never guess, infer missing values, or invent information.
+2. OMIT ABSENT FIELDS: If a field does not appear in the OCR text, DO NOT include it. Never output "N/A", "Unknown", "None", or placeholder strings.
+3. PRESERVE IDENTIFIERS: Numbers like Consumer Number, Reference Number, Meter Number, Account Number, Invoice Number, CNIC, and Roll Number MUST be assigned type "TEXT" (never "PHONE" or "NUMBER").
+4. FIELD TYPE ASSIGNMENT:
+   - "TEXT": Identifiers, status strings, plan names, descriptions, or general text.
+   - "NUMBER": Counts or meter reading units (e.g., Units Consumed, Previous/Current Meter Reading).
+   - "DATE": Dates in ISO 8601 format YYYY-MM-DD.
+   - "CURRENCY": Monetary values (clean numeric string without symbols, e.g. "8450" for "Rs. 8,450").
+   - "PHONE": Telephone/contact numbers (e.g. "+92 300 1234567").
+   - "EMAIL": Email addresses (e.g. "support@example.com").
+   - "URL": Website links/URLs (e.g. "https://example.com").
+   - "ADDRESS": Consolidated physical addresses.
+   - "PERSON_NAME": Customer name, contact person name, policy holder, or card holder.
+   - "ORGANIZATION": Provider name, company, merchant, bank, or issuing institution.
+5. FIELD NAME STANDARDIZATION: Use clear, canonical field names (e.g. "Consumer Number", "Reference Number", "Meter Number", "Due Date", "Total Amount", "Service Address").
+6. NO DUPLICATES: Do not extract the same value multiple times under slightly different labels.
+7. ADDRESS CONSOLIDATION: Combine street, sector, city, district, province, and country into ONE consolidated ADDRESS field when referring to the same location.
+
+=== DOMAIN-SPECIFIC EXTRACTION INSTRUCTIONS ===
+
+--- DOMAIN 1: UTILITY BILLS (ELECTRICITY, GAS, WATER, INTERNET, MOBILE, TAX) ---
+When processing utility bills (especially Electricity, Gas, or Water Bills), actively inspect the OCR text for all available fields:
+- Identification: "Provider" (ORGANIZATION), "Consumer Name" (PERSON_NAME), "Consumer Number" (TEXT), "Reference Number" (TEXT), "Account Number" (TEXT), "Meter Number" (TEXT).
+- Billing Details: "Billing Month" (TEXT), "Billing Period" (TEXT), "Issue Date" (DATE), "Due Date" (DATE), "Tariff" (TEXT).
+- Meter Readings & Usage: "Previous Reading" (NUMBER), "Current Reading" (NUMBER), "Units Consumed" (NUMBER), "Reading Date" (DATE).
+- Charges & Financials: "Electricity Charges" (CURRENCY), "Fuel Price Adjustment" (CURRENCY), "Taxes & Duties" (CURRENCY), "Surcharges" (CURRENCY), "Arrears" (CURRENCY), "Total Amount" / "Amount Within Due Date" (CURRENCY), "Amount After Due Date" (CURRENCY).
+- Contact & Location: "Service Address" (ADDRESS), "Support Phone" (PHONE), "Website" (URL), "Support Email" (EMAIL).
+
+--- DOMAIN 2: BANKING & FINANCIAL (STATEMENTS, INVOICES, RECEIPTS, CHEQUES) ---
+Look for: "Bank Name" / "Issuer" (ORGANIZATION), "Account Holder" (PERSON_NAME), "Account Number" / "IBAN" (TEXT), "Statement/Invoice Number" (TEXT), "Issue Date" (DATE), "Due Date" (DATE), "Subtotal" (CURRENCY), "Tax/VAT" (CURRENCY), "Total Amount" (CURRENCY), "Payment Status" (TEXT).
+
+--- DOMAIN 3: RETAIL RECEIPTS ---
+Look for: "Merchant Name" (ORGANIZATION), "Store Address" (ADDRESS), "Receipt Number" (TEXT), "Date" (DATE), "Subtotal" (CURRENCY), "Tax" (CURRENCY), "Total Paid" (CURRENCY), "Payment Method" (TEXT).
+
+--- DOMAIN 4: CERTIFICATES & ACADEMIC ---
+Look for: "Document Title" (TEXT), "Recipient Name" (PERSON_NAME), "Father Name" (PERSON_NAME), "Issue Date" (DATE), "Institution" (ORGANIZATION), "Registration/Roll Number" (TEXT), "Degree/Program" (TEXT), "CGPA/Marks" (TEXT).
+
+--- DOMAIN 5: IDENTITY DOCUMENTS (CNIC, PASSPORT, LICENSE) ---
+Look for: "Full Name" (PERSON_NAME), "Father Name" (PERSON_NAME), "Identity Number" / "CNIC" (TEXT), "Date of Birth" (DATE), "Gender" (TEXT), "Issue Date" (DATE), "Expiry Date" (DATE), "Address" (ADDRESS).
+
+--- DOMAIN 6: INSURANCE & WARRANTY ---
+Look for: "Provider/Company" (ORGANIZATION), "Policy/Card Holder" (PERSON_NAME), "Policy/Serial Number" (TEXT), "Product Name" (TEXT), "Purchase Date" (DATE), "Effective Date" (DATE), "Expiry Date" (DATE), "Premium Amount" (CURRENCY), "Sum Insured" (CURRENCY).
+
+--- DOMAIN 7: GENERIC / CUSTOM DOCUMENTS ---
+Look for: "Title" (TEXT), "Reference Number" (TEXT), "Names" (PERSON_NAME), "Company" (ORGANIZATION), "Dates" (DATE), "Amounts" (CURRENCY), "Address" (ADDRESS), "Phone" (PHONE), "Email" (EMAIL), "Website" (URL).
+
+=== OUTPUT FORMAT ===
+Return ONLY valid JSON matching this exact structure:
 {
-  "document_type": "ELECTRICITY_BILL",
+  "category": "Bill",
+  "document_type": "Electricity Bill",
   "fields": [
-    {"name": "Provider", "value": "IESCO", "type": "TEXT"},
-    {"name": "Amount", "value": "8450", "type": "NUMBER"},
-    {"name": "Due Date", "value": "2026-09-18", "type": "DATE"}
+    {"name": "Provider", "value": "LESCO", "type": "ORGANIZATION"},
+    {"name": "Consumer Name", "value": "Hamdan Khan", "type": "PERSON_NAME"},
+    {"name": "Consumer Number", "value": "12345678901234", "type": "TEXT"},
+    {"name": "Reference Number", "value": "04 11234 5678900 U", "type": "TEXT"},
+    {"name": "Meter Number", "value": "9876543", "type": "TEXT"},
+    {"name": "Billing Month", "value": "September 2026", "type": "TEXT"},
+    {"name": "Issue Date", "value": "2026-09-05", "type": "DATE"},
+    {"name": "Due Date", "value": "2026-09-20", "type": "DATE"},
+    {"name": "Previous Reading", "value": "14250", "type": "NUMBER"},
+    {"name": "Current Reading", "value": "14680", "type": "NUMBER"},
+    {"name": "Units Consumed", "value": "430", "type": "NUMBER"},
+    {"name": "Tariff", "value": "A-1a(01)", "type": "TEXT"},
+    {"name": "Electricity Charges", "value": "12900", "type": "CURRENCY"},
+    {"name": "Fuel Price Adjustment", "value": "850", "type": "CURRENCY"},
+    {"name": "Taxes & Duties", "value": "2150", "type": "CURRENCY"},
+    {"name": "Arrears", "value": "0", "type": "CURRENCY"},
+    {"name": "Total Amount Within Due Date", "value": "15900", "type": "CURRENCY"},
+    {"name": "Amount After Due Date", "value": "17100", "type": "CURRENCY"},
+    {"name": "Service Address", "value": "House 12, Street 4, Sector F-8/1, Islamabad", "type": "ADDRESS"}
   ]
 }
 """
+
+VALID_TYPES = {
+    "TEXT",
+    "NUMBER",
+    "DATE",
+    "CURRENCY",
+    "PHONE",
+    "EMAIL",
+    "URL",
+    "ADDRESS",
+    "PERSON_NAME",
+    "ORGANIZATION",
+}
+
+PLACEHOLDER_STRINGS = {"N/A", "UNKNOWN", "NOT SPECIFIED", "NONE", "NULL", "NOT AVAILABLE", "N / A"}
 
 
 class GeminiAIExtractor(AIExtractor):
@@ -75,16 +145,33 @@ class GeminiAIExtractor(AIExtractor):
 
     raw_fields = data.get("fields", [])
     valid_fields = []
+    seen_names = set()
+
     for f in raw_fields:
       name = str(f.get("name", "")).strip()
       value = str(f.get("value", "")).strip()
       ftype = str(f.get("type", "TEXT")).upper().strip()
 
-      if ftype not in ("TEXT", "NUMBER", "DATE"):
+      if ftype not in VALID_TYPES:
         ftype = "TEXT"
 
-      if name and value:
-        valid_fields.append(ExtractedField(name=name, value=value, type=ftype))
+      # Reject empty or placeholder values (anti-hallucination)
+      if not name or not value or value.upper() in PLACEHOLDER_STRINGS:
+        continue
 
-    doc_type = str(data.get("document_type", "UNKNOWN")).upper().strip()
-    return ExtractionResponse(document_type=doc_type, fields=valid_fields)
+      # Deduplicate identical field names
+      name_key = name.lower()
+      if name_key in seen_names:
+        continue
+      seen_names.add(name_key)
+
+      valid_fields.append(ExtractedField(name=name, value=value, type=ftype))
+
+    category = str(data.get("category", "Other")).strip()
+    doc_type = str(data.get("document_type", "UNKNOWN")).strip()
+
+    return ExtractionResponse(
+        category=category,
+        document_type=doc_type,
+        fields=valid_fields
+    )
