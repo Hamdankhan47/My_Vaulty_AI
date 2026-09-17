@@ -1,7 +1,10 @@
+import logging
 from app.core.config import settings
 from app.schemas.extraction import ExtractionRequest, ExtractionResponse
 from app.services.gemini_extractor import GeminiAIExtractor
 from fastapi import APIRouter, HTTPException, status
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/documents", tags=["extraction"])
 
@@ -36,10 +39,12 @@ async def extract_document_fields(
         document_type=request.document_type, ocr_text=request.ocr_text
     )
   except ValueError as val_err:
+    logger.error("AI extraction configuration error: %s", val_err, exc_info=True)
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(val_err)
     )
   except Exception as err:
+    logger.error("AI extraction exception: %s", err, exc_info=True)
     raise HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail=f"AI extraction failed: {str(err)}",

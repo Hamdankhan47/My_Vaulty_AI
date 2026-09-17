@@ -1,5 +1,9 @@
+import asyncio
 import json
 import logging
+import socket
+import urllib.error
+import urllib.request
 from google import genai
 from google.genai import types
 from app.core.config import settings
@@ -115,9 +119,13 @@ class GeminiAIExtractor(AIExtractor):
       self, document_type: str | None, ocr_text: str
   ) -> ExtractionResponse:
     if not self.api_key:
-      raise ValueError("Gemini API key is not configured")
+      raise ValueError("AI API key is not configured")
 
     user_context = f"Document Type Context: {document_type or 'UNKNOWN'}\n\nRaw OCR Text:\n{ocr_text}"
+
+    # Support Groq API key (starts with 'gsk_')
+    if self.api_key.startswith("gsk_"):
+      return await self._extract_groq(user_context)
 
     client = genai.Client(api_key=self.api_key)
     response = client.models.generate_content(
@@ -131,6 +139,59 @@ class GeminiAIExtractor(AIExtractor):
 
     return self._parse_and_validate(response.text)
 
+  async def _extract_groq(self, user_context: str) -> ExtractionResponse:
+    model = self.model_name if ("groq/" in self.model_name or "llama" in self.model_name or "qwen" in self.model_name) else "groq/compound"
+    req = urllib.request.Request(
+        'https://api.groq.com/openai/v1/chat/completions',
+        headers={
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0'
+        },
+        data=json.dumps({
+            'model': model,
+            'messages': [
+                {'role': 'system', 'content': SYSTEM_PROMPT},
+                {'role': 'user', 'content': user_context}
+            ],
+            'response_format': {'type': 'json_object'},
+            'temperature': 0.1
+        }).encode('utf-8')
+    )
+
+    def _call_groq():
+      with urllib.request.urlopen(req, timeout=60) as response:
+        res = json.loads(response.read().decode('utf-8'))
+        return res['choices'][0]['message']['content']
+
+    max_retries = 3
+    for attempt in range(max_retries):
+      try:
+        raw_content = await asyncio.to_thread(_call_groq)
+        return self._parse_and_validate(raw_content)
+      except urllib.error.HTTPError as http_err:
+        if http_err.code == 429 and attempt < max_retries - 1:
+          wait_time = (attempt + 1) * 3
+          logger.warning(f"Groq API rate limit (429). Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+          await asyncio.sleep(wait_time)
+        else:
+          err_body = http_err.read().decode('utf-8', errors='ignore') if hasattr(http_err, 'read') else str(http_err)
+          logger.error(f"Groq API HTTP Error {http_err.code}: {err_body}")
+          if http_err.code == 429:
+            raise ValueError("AI API rate limit reached. Please wait a few seconds and try again.")
+          raise ValueError(f"AI API error {http_err.code}: {http_err.reason}")
+      except (TimeoutError, socket.timeout, urllib.error.URLError) as timeout_err:
+        if attempt < max_retries - 1:
+          wait_time = (attempt + 1) * 2
+          logger.warning(f"Groq API read timeout ({timeout_err}). Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+          await asyncio.sleep(wait_time)
+        else:
+          logger.error(f"Groq API timeout error: {timeout_err}")
+          raise ValueError("AI request timed out. Please try again.")
+      except Exception as err:
+        logger.error(f"Groq API error: {err}")
+        raise err
+
   def _parse_and_validate(self, raw_json: str) -> ExtractionResponse:
     clean_json = raw_json.strip()
     if clean_json.startswith("```json"):
@@ -140,6 +201,12 @@ class GeminiAIExtractor(AIExtractor):
     if clean_json.endswith("```"):
       clean_json = clean_json[:-3]
     clean_json = clean_json.strip()
+
+    # Extract JSON object substring between '{' and '}' to ignore any reasoning text
+    first_brace = clean_json.find('{')
+    last_brace = clean_json.rfind('}')
+    if first_brace != -1 and last_brace > first_brace:
+      clean_json = clean_json[first_brace:last_brace + 1]
 
     data = json.loads(clean_json)
 
