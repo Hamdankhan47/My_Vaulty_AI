@@ -139,7 +139,8 @@ private val GridViewIcon: ImageVector by lazy {
 fun HomeScreen(
     viewModel: HomeViewModel,
     onDocumentClick: (Document) -> Unit,
-    onImportSuccess: (Document) -> Unit = {}
+    onImportSuccess: (Document) -> Unit = {},
+    onViewAllClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val isGridView by viewModel.isGridView.collectAsState()
@@ -278,13 +279,23 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                Text(
-                    text = "Recent Documents",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Recent Documents",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    
+                    TextButton(onClick = onViewAllClick) {
+                        Text("View All")
+                    }
+                }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
                 if (uiState.recentDocuments.isEmpty() && !uiState.isLoading && !uiState.isImporting) {
                     Box(

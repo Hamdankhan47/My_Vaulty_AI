@@ -55,6 +55,10 @@ class HomeViewModel(
     private val _isImporting = MutableStateFlow(false)
     private val _errorMessage = MutableStateFlow<String?>(null)
 
+    fun getAllDocumentsFlow(): Flow<List<Document>> {
+        return documentRepository.getAllDocuments()
+    }
+
     val uiState: StateFlow<HomeUiState> = combine(
         documentRepository.getRecentDocuments(),
         _isImporting,

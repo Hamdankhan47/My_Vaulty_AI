@@ -22,6 +22,7 @@ import com.myvault.app.ui.viewer.FileViewerScreen
 
 sealed class Screen {
     object Home : Screen()
+    object AllDocuments : Screen()
     data class Detail(val document: Document) : Screen()
     data class Review(val document: Document) : Screen()
     data class Viewer(val document: Document) : Screen()
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity() {
                         is Screen.Viewer -> Screen.Detail(screen.document)
                         is Screen.Review -> Screen.Detail(screen.document)
                         is Screen.Detail -> Screen.Home
+                        is Screen.AllDocuments -> Screen.Home
                         is Screen.Home -> Screen.Home
                     }
                 }
@@ -62,6 +64,25 @@ class MainActivity : ComponentActivity() {
                             },
                             onImportSuccess = { newDocument ->
                                 currentScreen = Screen.Detail(newDocument)
+                            },
+                            onViewAllClick = {
+                                currentScreen = Screen.AllDocuments
+                            }
+                        )
+                    }
+                    is Screen.AllDocuments -> {
+                        com.myvault.app.ui.home.AllDocumentsScreen(
+                            viewModel = homeViewModel,
+                            onBackClick = {
+                                currentScreen = Screen.Home
+                            },
+                            onDocumentClick = { document ->
+                                currentScreen = Screen.Detail(document)
+                            },
+                            onDeleteClick = { document ->
+                                // Optional inline deletion or just let the detailed screen handle it. 
+                                // Alternatively implemented via HomeViewModel
+                                homeViewModel.deleteDocument(document, {}, {})
                             }
                         )
                     }
