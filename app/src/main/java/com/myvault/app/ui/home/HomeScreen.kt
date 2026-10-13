@@ -14,9 +14,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -37,16 +39,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -61,7 +69,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -146,10 +156,13 @@ fun HomeScreen(
     val isGridView by viewModel.isGridView.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
     var showAddOptionsSheet by remember { mutableStateOf(false) }
     var pendingImport by remember { mutableStateOf<PendingImport?>(null) }
     var documentToDelete by remember { mutableStateOf<Document?>(null) }
+    var selectedDocumentIds by remember { mutableStateOf(emptySet<Long>()) }
+    var showMultiDeleteConfirmationDialog by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 
     fun handlePendingUri(uri: Uri, fileType: String, customCategory: String) {
@@ -210,31 +223,81 @@ fun HomeScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "MyVault",
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                actions = {
-                    IconButton(
-                        onClick = { viewModel.setGridView(!isGridView) },
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isGridView) Icons.AutoMirrored.Filled.List else GridViewIcon,
-                            contentDescription = if (isGridView) "Switch to List View" else "Switch to Grid View",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+            if (selectedDocumentIds.isNotEmpty()) {
+                val availableDocuments = uiState.recentDocuments
+                val allIds = availableDocuments.map { it.id }.toSet()
+                val isAllSelected = allIds.isNotEmpty() && selectedDocumentIds.containsAll(allIds)
+
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "${selectedDocumentIds.size} Selected",
+                            fontWeight = FontWeight.Bold
                         )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { selectedDocumentIds = emptySet() }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear Selection"
+                            )
+                        }
+                    },
+                    actions = {
+                        TextButton(
+                            onClick = {
+                                selectedDocumentIds = if (isAllSelected) emptySet() else allIds
+                            }
+                        ) {
+                            Text(
+                                text = if (isAllSelected) "Deselect All" else "Select All",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        IconButton(
+                            onClick = { showMultiDeleteConfirmationDialog = true }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete Selected",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 )
-            )
+            } else {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "MyVault",
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = { viewModel.setGridView(!isGridView) },
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isGridView) Icons.AutoMirrored.Filled.List else GridViewIcon,
+                                contentDescription = if (isGridView) "Switch to List View" else "Switch to Grid View",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
+            }
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { innerPadding ->
@@ -277,7 +340,48 @@ fun HomeScreen(
                     Text(text = "Add Document")
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                val searchQuery by viewModel.searchQuery.collectAsState()
+                val selectedCategory by viewModel.selectedCategory.collectAsState()
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.setSearchQuery(it) },
+                    placeholder = { Text("Search title, text, or fields...") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear Search")
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val categories = listOf("All", "Bill", "Receipt", "CV", "Notice", "Transcript", "ID", "Certificate", "Other")
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    items(categories) { category ->
+                        FilterChip(
+                            selected = selectedCategory.equals(category, ignoreCase = true),
+                            onClick = { viewModel.setSelectedCategory(category) },
+                            label = { Text(category) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                val isFiltered = searchQuery.isNotBlank() || !selectedCategory.equals("All", ignoreCase = true)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -285,7 +389,7 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Recent Documents",
+                        text = if (isFiltered) "Search Results (${uiState.recentDocuments.size})" else "Recent Documents",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -306,14 +410,14 @@ fun HomeScreen(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = "No documents yet",
+                                text = if (isFiltered) "No matching documents found" else "No documents yet",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Scan or upload a bill or document to get started.",
+                                text = if (isFiltered) "Try a different search query or category filter." else "Scan or upload a bill or document to get started.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                             )
@@ -327,10 +431,24 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         items(uiState.recentDocuments, key = { it.id }) { document ->
+                            val isSelected = document.id in selectedDocumentIds
+                            val isSelectionMode = selectedDocumentIds.isNotEmpty()
+
                             DocumentGridItem(
                                 document = document,
-                                onClick = { onDocumentClick(document) },
-                                onDeleteClick = { documentToDelete = document }
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        selectedDocumentIds = if (isSelected) selectedDocumentIds - document.id else selectedDocumentIds + document.id
+                                    } else {
+                                        onDocumentClick(document)
+                                    }
+                                },
+                                onDeleteClick = { documentToDelete = document },
+                                isSelectionMode = isSelectionMode,
+                                isSelected = isSelected,
+                                onLongClick = {
+                                    selectedDocumentIds = if (isSelected) selectedDocumentIds - document.id else selectedDocumentIds + document.id
+                                }
                             )
                         }
                     }
@@ -340,10 +458,24 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         items(uiState.recentDocuments, key = { it.id }) { document ->
+                            val isSelected = document.id in selectedDocumentIds
+                            val isSelectionMode = selectedDocumentIds.isNotEmpty()
+
                             DocumentListItem(
                                 document = document,
-                                onClick = { onDocumentClick(document) },
-                                onDeleteClick = { documentToDelete = document }
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        selectedDocumentIds = if (isSelected) selectedDocumentIds - document.id else selectedDocumentIds + document.id
+                                    } else {
+                                        onDocumentClick(document)
+                                    }
+                                },
+                                onDeleteClick = { documentToDelete = document },
+                                isSelectionMode = isSelectionMode,
+                                isSelected = isSelected,
+                                onLongClick = {
+                                    selectedDocumentIds = if (isSelected) selectedDocumentIds - document.id else selectedDocumentIds + document.id
+                                }
                             )
                         }
                     }
@@ -368,6 +500,51 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    if (showMultiDeleteConfirmationDialog && selectedDocumentIds.isNotEmpty()) {
+        val count = selectedDocumentIds.size
+        AlertDialog(
+            onDismissRequest = { showMultiDeleteConfirmationDialog = false },
+            title = { Text(text = "Delete $count selected document(s)?") },
+            text = {
+                Text(text = "Are you sure you want to permanently delete $count selected document(s)? This action cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val docsToDelete = uiState.recentDocuments.filter { it.id in selectedDocumentIds }
+                        showMultiDeleteConfirmationDialog = false
+                        val deleteCount = docsToDelete.size
+                        viewModel.deleteDocuments(
+                            documents = docsToDelete,
+                            onSuccess = {
+                                selectedDocumentIds = emptySet()
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Deleted $deleteCount document(s)")
+                                }
+                            },
+                            onError = { errorMsg ->
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(errorMsg)
+                                }
+                            }
+                        )
+                    }
+                ) {
+                    Text(
+                        text = "Delete ($count)",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMultiDeleteConfirmationDialog = false }) {
+                    Text(text = "Cancel")
+                }
+            }
+        )
     }
 
     documentToDelete?.let { doc ->
@@ -469,11 +646,15 @@ fun HomeScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DocumentListItem(
     document: Document,
     onClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onLongClick: (() -> Unit)? = null
 ) {
     val file = File(document.filePath)
     val pdfThumbnail = rememberPdfThumbnail(file = file, fileType = document.fileType, targetSize = 256)
@@ -482,7 +663,10 @@ fun DocumentListItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { onLongClick?.invoke() }
+            )
     ) {
         Row(
             modifier = Modifier
@@ -491,6 +675,14 @@ fun DocumentListItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() }
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
             // Small Thumbnail Box (56dp)
             Box(
                 modifier = Modifier
@@ -539,7 +731,7 @@ fun DocumentListItem(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${document.category}  •  ${document.documentType}",
+                    text = "${document.category.ifBlank { "Other" }}  •  ${document.documentType.ifBlank { document.fileType }}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -547,28 +739,33 @@ fun DocumentListItem(
                 )
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            IconButton(
-                onClick = onDeleteClick,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete Document",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp)
-                )
+            if (!isSelectionMode) {
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = onDeleteClick,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete Document",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DocumentGridItem(
     document: Document,
     onClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onLongClick: (() -> Unit)? = null
 ) {
     val file = File(document.filePath)
     val pdfThumbnail = rememberPdfThumbnail(file = file, fileType = document.fileType, targetSize = 512)
@@ -577,7 +774,10 @@ fun DocumentGridItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { onLongClick?.invoke() }
+            )
     ) {
         Column(
             modifier = Modifier.padding(10.dp)
@@ -617,6 +817,16 @@ fun DocumentGridItem(
                         )
                     }
                 }
+
+                if (isSelectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onClick() },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -636,7 +846,7 @@ fun DocumentGridItem(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "${document.fileType}  •  ${document.documentType}",
+                        text = "${document.category.ifBlank { "Other" }}  •  ${document.documentType.ifBlank { document.fileType }}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -644,16 +854,18 @@ fun DocumentGridItem(
                     )
                 }
 
-                IconButton(
-                    onClick = onDeleteClick,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete Document",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(18.dp)
-                    )
+                if (!isSelectionMode) {
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete Document",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }

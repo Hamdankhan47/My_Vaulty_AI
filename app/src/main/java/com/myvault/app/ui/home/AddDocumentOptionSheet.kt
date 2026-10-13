@@ -9,8 +9,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,7 +55,7 @@ fun AddDocumentOptionSheet(
             OptionRow(
                 title = "Scan Document",
                 subtitle = "Capture document using camera scanner",
-                icon = Icons.Default.Add,
+                icon = Icons.Default.CameraAlt,
                 onClick = {
                     onDismissRequest()
                     onScanDocumentClick()
@@ -64,7 +65,7 @@ fun AddDocumentOptionSheet(
             OptionRow(
                 title = "Choose Image",
                 subtitle = "Pick an image from photo gallery",
-                icon = Icons.Default.Info,
+                icon = Icons.Default.Image,
                 onClick = {
                     onDismissRequest()
                     onChooseImageClick()
@@ -74,7 +75,7 @@ fun AddDocumentOptionSheet(
             OptionRow(
                 title = "Choose PDF",
                 subtitle = "Select a PDF file from device storage",
-                icon = Icons.Default.Info,
+                icon = Icons.Default.PictureAsPdf,
                 onClick = {
                     onDismissRequest()
                     onChoosePdfClick()
@@ -100,7 +101,7 @@ private fun OptionRow(
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = null,
+            contentDescription = title,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(8.dp)
         )

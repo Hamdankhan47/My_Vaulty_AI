@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import com.myvault.app.domain.model.Document
 import com.myvault.app.domain.model.DocumentField
 import com.myvault.app.domain.model.FieldSource
+import com.myvault.app.domain.model.FieldType
 import com.myvault.app.ui.home.HomeViewModel
 
 val DOCUMENT_TYPE_OPTIONS = listOf(
@@ -286,11 +287,22 @@ private fun FieldEditCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Source: ${field.source.name}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Source: ${field.source.name}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (field.confidence < 0.7) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "⚠️ Low Confidence (${(field.confidence * 100).toInt()}%)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
 
                 IconButton(onClick = onDeleteClick) {
                     Icon(
@@ -313,10 +325,23 @@ private fun FieldEditCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            val isInvalidEmail = field.fieldType == FieldType.EMAIL &&
+                field.fieldValue.isNotBlank() &&
+                (!field.fieldValue.contains("@") || !field.fieldValue.contains("."))
+
             OutlinedTextField(
                 value = field.fieldValue,
                 onValueChange = { onFieldChange(field.copy(fieldValue = it)) },
                 label = { Text("Field Value") },
+                isError = isInvalidEmail,
+                supportingText = {
+                    if (isInvalidEmail) {
+                        Text(
+                            text = "Invalid email format (missing '@' or domain)",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )

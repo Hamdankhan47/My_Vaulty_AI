@@ -6,5 +6,6 @@ data class DocumentField(
     val fieldName: String,
     val fieldValue: String,
     val fieldType: FieldType = FieldType.TEXT,
-    val source: FieldSource = FieldSource.OCR
+    val source: FieldSource = FieldSource.OCR,
+    val confidence: Double = 1.0
 )

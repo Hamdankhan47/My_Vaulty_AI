@@ -1,6 +1,9 @@
-   plugins {
+import java.util.Properties
+
+plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlinCompose)
+    alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.ksp)
 }
 
@@ -16,6 +19,19 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        val localProperties = Properties()
+        val localPropertiesFile = project.rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localProperties.load(localPropertiesFile.inputStream())
+        }
+        val apiKey = localProperties.getProperty("GROQ_API_KEY")
+            ?: localProperties.getProperty("GEMINI_API_KEY") ?: ""
+        val model = localProperties.getProperty("GROQ_MODEL")
+            ?: localProperties.getProperty("GEMINI_MODEL") ?: "llama-3.3-70b-versatile"
+
+        buildConfigField("String", "GROQ_API_KEY", "\"$apiKey\"")
+        buildConfigField("String", "GROQ_MODEL", "\"$model\"")
     }
 
     testOptions {
@@ -53,6 +69,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     // ML Kit Document Scanner & Text Recognition
@@ -65,6 +82,10 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.gson)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.libphonenumber)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.onnxruntime.android)
 
     // Room
     implementation(libs.androidx.room.runtime)

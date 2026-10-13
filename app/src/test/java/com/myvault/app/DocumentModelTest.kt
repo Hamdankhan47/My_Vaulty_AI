@@ -139,7 +139,7 @@ class DocumentModelTest {
                 ExtractionStatus.NOT_PROCESSED, ExtractionStatus.OCR_COMPLETED -> "Process with AI"
                 ExtractionStatus.AI_PROCESSING -> "Processing with AI..."
                 ExtractionStatus.AI_COMPLETED -> "Reprocess with AI"
-                ExtractionStatus.AI_FAILED -> "Retry AI"
+                ExtractionStatus.AI_FAILED, ExtractionStatus.NEEDS_REVIEW -> "Retry AI"
             }
         }
 
@@ -148,6 +148,7 @@ class DocumentModelTest {
         assertEquals("Processing with AI...", getButtonText(ExtractionStatus.AI_PROCESSING))
         assertEquals("Reprocess with AI", getButtonText(ExtractionStatus.AI_COMPLETED))
         assertEquals("Retry AI", getButtonText(ExtractionStatus.AI_FAILED))
+        assertEquals("Retry AI", getButtonText(ExtractionStatus.NEEDS_REVIEW))
     }
 
     @Test
@@ -276,7 +277,7 @@ class DocumentModelTest {
         assertTrue(contactActions.canSaveContact)
         assertTrue(contactActions.hasAnyAction)
 
-        // Document with only normal fields -> no actions
+        // Document with DATE field -> Add to Calendar action available
         val normalDocFields = listOf(
             DocumentField(fieldName = "Bill Number", fieldValue = "12345", fieldType = FieldType.TEXT, source = FieldSource.AI),
             DocumentField(fieldName = "Reference Number", fieldValue = "98765", fieldType = FieldType.TEXT, source = FieldSource.AI),
@@ -284,7 +285,22 @@ class DocumentModelTest {
             DocumentField(fieldName = "Due Date", fieldValue = "2026-09-20", fieldType = FieldType.DATE, source = FieldSource.AI)
         )
         val normalActions = extractDocumentActions(normalDocFields)
-        assertFalse(normalActions.hasAnyAction)
+        assertEquals("2026-09-20", normalActions.dateValue)
+        assertEquals("Due Date", normalActions.dateLabel)
+        assertTrue(normalActions.hasAnyAction)
         assertFalse(normalActions.canSaveContact)
+    }
+
+    @Test
+    fun `test phone extension formatting for dialing`() {
+        assertEquals("0519190000,302", com.myvault.app.ui.detail.formatPhoneForDialing("Ph 051-9190000 Ext: 302"))
+        assertEquals("+923001234567", com.myvault.app.ui.detail.formatPhoneForDialing("+92 300 1234567"))
+    }
+
+    @Test
+    fun `test date parsing to millis for calendar intent`() {
+        val millis = com.myvault.app.ui.detail.parseDateToMillis("2026-09-20")
+        assertNotNull(millis)
+        assertTrue(millis!! > 0L)
     }
 }

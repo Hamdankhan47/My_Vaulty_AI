@@ -32,6 +32,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // FLAG_SECURE disabled for now to allow taking screenshots during development/testing
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
 
         val database = AppDatabase.getInstance(applicationContext)

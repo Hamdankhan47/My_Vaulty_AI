@@ -112,5 +112,6 @@ private fun formatExtractionStatus(status: ExtractionStatus): String {
         ExtractionStatus.AI_PROCESSING -> "Processing with AI..."
         ExtractionStatus.AI_COMPLETED -> "AI Extraction Complete"
         ExtractionStatus.AI_FAILED -> "AI Extraction Failed"
+        ExtractionStatus.NEEDS_REVIEW -> "Needs Review"
     }
 }

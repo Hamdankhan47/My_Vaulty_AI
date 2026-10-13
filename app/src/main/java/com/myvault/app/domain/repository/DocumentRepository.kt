@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 interface DocumentRepository {
     fun getRecentDocuments(): Flow<List<Document>>
     fun getAllDocuments(): Flow<List<Document>>
+    fun searchDocuments(query: String): Flow<List<Document>>
     suspend fun getDocumentById(id: Long): Document?
     fun getDocumentByIdFlow(id: Long): Flow<Document?>
     suspend fun insertDocument(document: Document): Long

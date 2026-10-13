@@ -6,8 +6,11 @@ object PredefinedDocumentTypes {
         "Bill",
         "Banking",
         "Receipt",
+        "CV",
+        "Notice",
+        "Transcript",
+        "ID",
         "Certificate",
-        "Identity",
         "Insurance",
         "Warranty",
         "Other"
@@ -37,20 +40,36 @@ object PredefinedDocumentTypes {
             "Medical Receipt",
             "Purchase Receipt"
         ),
+        "CV" to listOf(
+            "Resume / CV",
+            "Curriculum Vitae",
+            "Cover Letter"
+        ),
+        "Notice" to listOf(
+            "Exam Notice",
+            "Official Notice",
+            "Public Notice",
+            "Announcement"
+        ),
+        "Transcript" to listOf(
+            "Academic Transcript",
+            "Marksheet",
+            "Grade Sheet"
+        ),
+        "ID" to listOf(
+            "CNIC",
+            "Passport",
+            "Driving License",
+            "Identity Card",
+            "Identity Document"
+        ),
         "Certificate" to listOf(
             "Birth Certificate",
             "Marriage Certificate",
             "Educational Certificate",
             "Degree Certificate",
-            "Academic Transcript",
             "Experience Certificate",
             "Employment Letter"
-        ),
-        "Identity" to listOf(
-            "CNIC",
-            "Passport",
-            "Driving License",
-            "Identity Document"
         ),
         "Insurance" to listOf(
             "Insurance Policy",

@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.provider.CalendarContract
 import android.provider.ContactsContract
 import android.widget.Toast
 import androidx.compose.foundation.Image
@@ -14,6 +15,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +33,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
@@ -85,13 +89,47 @@ data class DocumentActionsModel(
     val address: String?,
     val url: String?,
     val contactName: String?,
-    val organization: String?
+    val organization: String?,
+    val dateValue: String?,
+    val dateLabel: String?
 ) {
     val canSaveContact: Boolean
         get() = !contactName.isNullOrBlank() || !organization.isNullOrBlank() || !phone.isNullOrBlank() || !email.isNullOrBlank()
 
     val hasAnyAction: Boolean
-        get() = canSaveContact || !phone.isNullOrBlank() || !email.isNullOrBlank() || !address.isNullOrBlank() || !url.isNullOrBlank()
+        get() = canSaveContact || !phone.isNullOrBlank() || !email.isNullOrBlank() || !address.isNullOrBlank() || !url.isNullOrBlank() || !dateValue.isNullOrBlank()
+}
+
+fun formatPhoneForDialing(phoneStr: String): String {
+    val extMatch = Regex("(?i)(.*?)\\s*(?:ext|extension|x|ext\\.)[:\\s]*([0-9]+)").find(phoneStr)
+    return if (extMatch != null) {
+        val baseNumber = extMatch.groupValues[1].filter { it.isDigit() || it == '+' }
+        val extDigits = extMatch.groupValues[2]
+        if (baseNumber.isBlank()) phoneStr else "$baseNumber,$extDigits"
+    } else {
+        val digits = phoneStr.filter { it.isDigit() || it == '+' }
+        if (digits.isBlank()) phoneStr else digits
+    }
+}
+
+fun parseDateToMillis(dateStr: String): Long? {
+    val formats = listOf(
+        "yyyy-MM-dd",
+        "yyyy/MM/dd",
+        "dd-MM-yyyy",
+        "dd/MM/yyyy",
+        "MM/dd/yyyy",
+        "d MMMM yyyy",
+        "MMMM d, yyyy"
+    )
+    for (format in formats) {
+        try {
+            val sdf = java.text.SimpleDateFormat(format, java.util.Locale.US)
+            val date = sdf.parse(dateStr)
+            if (date != null) return date.time
+        } catch (_: Exception) {}
+    }
+    return null
 }
 
 fun extractDocumentActions(fields: List<DocumentField>): DocumentActionsModel {
@@ -131,17 +169,25 @@ fun extractDocumentActions(fields: List<DocumentField>): DocumentActionsModel {
             listOf("website", "site", "url", "link").any { l.contains(it) } && f.fieldValue.isNotBlank()
         }?.fieldValue
 
+    val dateField = fields.firstOrNull { it.fieldType == FieldType.DATE }
+        ?: fields.firstOrNull { f ->
+            val l = f.fieldName.lowercase().trim()
+            listOf("date", "due date", "issue date", "expiry date").any { l.contains(it) } && f.fieldValue.isNotBlank()
+        }
+
     return DocumentActionsModel(
         phone = phone?.trim()?.ifBlank { null },
         email = email?.trim()?.ifBlank { null },
         address = address?.trim()?.ifBlank { null },
         url = url?.trim()?.ifBlank { null },
         contactName = personName?.trim()?.ifBlank { null },
-        organization = organization?.trim()?.ifBlank { null }
+        organization = organization?.trim()?.ifBlank { null },
+        dateValue = dateField?.fieldValue?.trim()?.ifBlank { null },
+        dateLabel = dateField?.fieldName?.trim()?.ifBlank { null }
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DocumentDetailScreen(
     initialDocument: Document,
@@ -374,12 +420,43 @@ fun DocumentDetailScreen(
                     }
                 }
 
+                var showReprocessConfirmDialog by remember { mutableStateOf(false) }
+
                 Box(modifier = Modifier.weight(1f)) {
                     AiActionButton(
                         extractionStatus = document.extractionStatus,
                         ocrText = document.ocrText,
                         onProcessClick = {
-                            viewModel.retryAiExtraction(document.id)
+                            if (document.extractionStatus == ExtractionStatus.AI_COMPLETED || document.extractionStatus == ExtractionStatus.NEEDS_REVIEW) {
+                                showReprocessConfirmDialog = true
+                            } else {
+                                viewModel.retryAiExtraction(document.id)
+                            }
+                        }
+                    )
+                }
+
+                if (showReprocessConfirmDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showReprocessConfirmDialog = false },
+                        title = { Text("Reprocess with AI?") },
+                        text = {
+                            Text("Reprocessing will extract fresh AI fields while preserving all your manually edited fields (Source: USER). Do you want to proceed?")
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    showReprocessConfirmDialog = false
+                                    viewModel.retryAiExtraction(document.id)
+                                }
+                            ) {
+                                Text("Confirm Reprocess", fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showReprocessConfirmDialog = false }) {
+                                Text("Cancel")
+                            }
                         }
                     )
                 }
@@ -452,12 +529,12 @@ fun DocumentDetailScreen(
                     modifier = Modifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
-                    Row(
+                    FlowRow(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         // 1. Save Contact
                         if (documentActions.canSaveContact) {
@@ -471,7 +548,8 @@ fun DocumentDetailScreen(
                             AssistChip(
                                 onClick = {
                                     try {
-                                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${documentActions.phone}"))
+                                        val dialNumber = formatPhoneForDialing(documentActions.phone)
+                                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(dialNumber)}"))
                                         context.startActivity(intent)
                                     } catch (_: Exception) {
                                         Toast.makeText(context, "Unable to open phone application.", Toast.LENGTH_SHORT).show()
@@ -479,6 +557,31 @@ fun DocumentDetailScreen(
                                 },
                                 label = { Text("Call") },
                                 leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Call Number", modifier = Modifier.size(16.dp)) }
+                            )
+                        }
+                        // Add to Calendar
+                        if (!documentActions.dateValue.isNullOrBlank()) {
+                            AssistChip(
+                                onClick = {
+                                    val intent = Intent(Intent.ACTION_INSERT).apply {
+                                        data = CalendarContract.Events.CONTENT_URI
+                                        val eventTitle = "${documentActions.dateLabel ?: "Date"}: ${document.displayName.ifBlank { document.title }}"
+                                        putExtra(CalendarContract.Events.TITLE, eventTitle)
+                                        putExtra(CalendarContract.Events.DESCRIPTION, "Document: ${document.displayName.ifBlank { document.title }}\n${documentActions.dateLabel ?: "Date"}: ${documentActions.dateValue}")
+                                        val parsedMillis = parseDateToMillis(documentActions.dateValue)
+                                        if (parsedMillis != null) {
+                                            putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, parsedMillis)
+                                            putExtra(CalendarContract.EXTRA_EVENT_END_TIME, parsedMillis + 3600000L)
+                                        }
+                                    }
+                                    try {
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        Toast.makeText(context, "No calendar application is available.", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                label = { Text("Add to Calendar") },
+                                leadingIcon = { Icon(Icons.Default.DateRange, contentDescription = "Add to Calendar", modifier = Modifier.size(16.dp)) }
                             )
                         }
                         // 3. Email
@@ -800,7 +903,7 @@ private fun AiActionButton(
         ExtractionStatus.NOT_PROCESSED, ExtractionStatus.OCR_COMPLETED -> "Process with AI" to false
         ExtractionStatus.AI_PROCESSING -> "Processing with AI..." to true
         ExtractionStatus.AI_COMPLETED -> "Reprocess with AI" to false
-        ExtractionStatus.AI_FAILED -> "Retry AI" to false
+        ExtractionStatus.AI_FAILED, ExtractionStatus.NEEDS_REVIEW -> "Retry AI" to false
     }
 
     Button(

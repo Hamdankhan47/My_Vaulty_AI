@@ -5,5 +5,6 @@ enum class ExtractionStatus {
     OCR_COMPLETED,
     AI_PROCESSING,
     AI_COMPLETED,
-    AI_FAILED
+    AI_FAILED,
+    NEEDS_REVIEW
 }

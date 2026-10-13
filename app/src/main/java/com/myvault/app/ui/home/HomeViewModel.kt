@@ -7,7 +7,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.myvault.app.data.local.LocalFileStorageManager
-import com.myvault.app.data.remote.RetrofitClient
 import com.myvault.app.domain.model.Document
 import com.myvault.app.domain.model.DocumentField
 import com.myvault.app.domain.model.ExtractionStatus
@@ -19,15 +18,17 @@ import com.myvault.app.extraction.AddressConsolidator
 import com.myvault.app.extraction.AiFieldExtractor
 import com.myvault.app.extraction.FieldExtractor
 import com.myvault.app.extraction.LocalFieldExtractor
-import com.myvault.app.ocr.MlKitOcrEngine
 import com.myvault.app.ocr.OcrEngine
 import com.myvault.app.ocr.OcrResult
+import com.myvault.app.ocr.PaddleOcrEngine
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -55,17 +56,47 @@ class HomeViewModel(
     private val _isImporting = MutableStateFlow(false)
     private val _errorMessage = MutableStateFlow<String?>(null)
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _selectedCategory = MutableStateFlow("All")
+    val selectedCategory: StateFlow<String> = _selectedCategory.asStateFlow()
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun setSelectedCategory(category: String) {
+        _selectedCategory.value = category
+    }
+
     fun getAllDocumentsFlow(): Flow<List<Document>> {
         return documentRepository.getAllDocuments()
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     val uiState: StateFlow<HomeUiState> = combine(
-        documentRepository.getRecentDocuments(),
+        _searchQuery.flatMapLatest { query ->
+            if (query.isBlank()) {
+                documentRepository.getAllDocuments()
+            } else {
+                documentRepository.searchDocuments(query.trim())
+            }
+        },
+        _selectedCategory,
         _isImporting,
         _errorMessage
-    ) { documents, importing, error ->
+    ) { documents, categoryFilter, importing, error ->
+        val filtered = if (categoryFilter == "All") {
+            documents
+        } else {
+            documents.filter { doc ->
+                doc.category.equals(categoryFilter, ignoreCase = true)
+            }
+        }
+
         HomeUiState(
-            recentDocuments = documents,
+            recentDocuments = filtered,
             isLoading = false,
             isImporting = importing,
             errorMessage = error
@@ -304,7 +335,7 @@ class HomeViewModel(
         documentRepository.updateExtractionStatus(documentId, ExtractionStatus.AI_PROCESSING)
 
         try {
-            // Attempt Online AI Extraction via FastAPI + Gemini
+            // Attempt Online AI Extraction via Groq API
             Log.i("MyVaultE2E", "CALLING AiFieldExtractor")
             val aiResult = aiFieldExtractor.extract(documentType, ocrText)
             val mergedFields = mergeFieldsPreservingUser(existingFields, aiResult.fields)
@@ -328,7 +359,7 @@ class HomeViewModel(
             Log.w("HomeViewModel", "AI Extraction failed/offline, falling back to LocalFieldExtractor: ${e.localizedMessage}")
 
             val isOffline = isConnectivityError(e)
-            val finalStatus = if (isOffline) ExtractionStatus.OCR_COMPLETED else ExtractionStatus.AI_FAILED
+            val finalStatus = if (isOffline) ExtractionStatus.OCR_COMPLETED else ExtractionStatus.NEEDS_REVIEW
             val errorMsg = if (isOffline) null else (e.localizedMessage ?: e.javaClass.simpleName)
 
             documentRepository.updateExtractionStatus(documentId, finalStatus, errorMsg)
@@ -398,23 +429,44 @@ class HomeViewModel(
         }
     }
 
+    fun deleteDocuments(
+        documents: List<Document>,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            var failedCount = 0
+            for (document in documents) {
+                fileStorageManager.deleteFile(document.filePath)
+                try {
+                    documentRepository.deleteDocument(document)
+                } catch (_: Exception) {
+                    failedCount++
+                }
+            }
+            if (failedCount > 0) {
+                onError("Unable to delete $failedCount document(s).")
+            } else {
+                onSuccess()
+            }
+        }
+    }
+
     fun clearError() {
         _errorMessage.value = null
     }
 
     class Factory(
         private val context: Context,
-        private val repository: DocumentRepository,
-        private val apiBaseUrl: String? = null
+        private val repository: DocumentRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {
                 val appContext = context.applicationContext
                 val storageManager = LocalFileStorageManager(appContext)
-                val ocrEngine = MlKitOcrEngine(appContext)
-                val api = RetrofitClient.createApi(apiBaseUrl)
-                val aiFieldExtractor = AiFieldExtractor(api)
+                val ocrEngine = PaddleOcrEngine(appContext)
+                val aiFieldExtractor = AiFieldExtractor()
                 val localFieldExtractor = LocalFieldExtractor()
 
                 return HomeViewModel(

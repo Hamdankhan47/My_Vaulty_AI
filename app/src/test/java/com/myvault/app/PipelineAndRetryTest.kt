@@ -43,6 +43,8 @@ class PipelineAndRetryTest {
         private var idCounter = 1L
 
         override fun getRecentDocuments(): Flow<List<Document>> = flowOf(documents.values.toList())
+        override fun getAllDocuments(): Flow<List<Document>> = flowOf(documents.values.toList())
+        override fun searchDocuments(query: String): Flow<List<Document>> = flowOf(documents.values.filter { it.title.contains(query, ignoreCase = true) || it.displayName.contains(query, ignoreCase = true) })
         override suspend fun getDocumentById(id: Long): Document? = documents[id]
         override fun getDocumentByIdFlow(id: Long): Flow<Document?> = flowOf(documents[id])
 
@@ -402,7 +404,7 @@ class PipelineAndRetryTest {
         assertEquals(OcrStatus.COMPLETED, updatedDoc.ocrStatus)
         assertEquals(ExtractionStatus.OCR_COMPLETED, updatedDoc.extractionStatus)
 
-        // Verify Gemini AI extractor was NOT automatically called
+        // Verify AI extractor was NOT automatically called
         assertEquals(initialAiCalls, aiExtractor.callCount)
 
         // Verify USER field preserved while old AI field cleared
